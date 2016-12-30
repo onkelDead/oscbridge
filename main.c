@@ -33,14 +33,16 @@ lo_server_thread ardmix_server;
 
 typedef struct {
     char* client_port;
-    char* server_port;
+    char* server_send_port;
+    char* server_receive_port;
     char* server_ip;
     int debug_level;
 
 } Arguments;
 
 static char default_client[] = {"7770"};
-static char default_udp[] = {"3819"};
+static char default_server_send_port[] = {"3819"};
+static char default_server_receive_port[] = {"3820"};
 static char default_host[] = {"127.0.0.1"};
 int done = 0;
 Arguments arg;
@@ -51,11 +53,12 @@ usage (FILE *f, const char *me) {
 	fprintf (f, "Usage: oscbridge [OPTIONS]\n"
 		"\n"
 		"parameters:\n"
-		"  -c TCP_PORT      The port the OSC clients may connect to\n"
-                "  -u UDP_PORT      The udp port of the server\n"
-                "  -s HOST_IP       The ip of the udp server\n"
-		"  -h               This help\n"
-                "  -d DEBUG_LEVEL   Enable debugging."
+		"  -c TCP_PORT              The port the OSC clients may connect to\n"
+                "  -u SERVER_SEND_PORT      The udp port of the server receiver\n"
+                "  -r SERVER_RECEIVE_PORT   The UDP port the server sends responses to.\n"
+                "  -s HOST_IP               The IP address of the udp server\n"
+		"  -h                       This help\n"
+                "  -d DEBUG_LEVEL           Enable debugging. (1 for client messages, 2 for server messages, 3 for both)"
 		"\n"
 		);
 }
@@ -66,7 +69,8 @@ parse_arguments(int argc, char **argv, Arguments* arg) {
     
     arg->debug_level = 0;
     arg->server_ip = strdup(default_host);
-    arg->server_port = strdup(default_udp);
+    arg->server_send_port = strdup(default_server_send_port);
+    arg->server_receive_port = strdup(default_server_receive_port);
     arg->client_port = strdup(default_client);
     for (;;) {
         static const char *short_options = "t:u:s:hd:";
@@ -82,7 +86,10 @@ parse_arguments(int argc, char **argv, Arguments* arg) {
                 arg->client_port = strdup(optarg);
                 break;
             case 'u':
-                arg->server_port = strdup(optarg);
+                arg->server_send_port = strdup(optarg);
+                break;
+            case 'r':
+                arg->server_receive_port = strdup(optarg);
                 break;
             case 's':
                 arg->server_ip = strdup(optarg);
@@ -120,19 +127,32 @@ void dump_message(const char* path, const char *types, lo_arg ** argv,
 
 void ardour_err_handler(int num, const char *msg, const char *where) {
     fprintf(stderr, "ARDOUR_ERROR %d: %s at %s\n", num, msg, where);
+    exit(1);
 }
 
 void ardmix_err_handler(int num, const char *msg, const char *where) {
     fprintf(stderr, "ARDMIX_ERROR %d: %s at %s\n", num, msg, where);
+    exit(1);
 }
 
 const int client_exists(lo_address client) {
     int i;
+    int ret = 0;
+    char* new_client_url = lo_address_get_url(lo_message_get_source(client));
     for( i = 0; i < MAX_CLIENTS; i++ ) {
-        if( ardmix_client[i] && !strcmp(lo_address_get_url(lo_message_get_source(client)), lo_address_get_url(ardmix_client[i])))
-            return 1;
+        if( ardmix_client[i] ) {
+            char* client_url = lo_address_get_url(ardmix_client[i]);
+
+            if( ardmix_client[i] && !strcmp(new_client_url, client_url) ){
+                ret = 1;
+            }
+            free(client_url);
+        }
+        if( ret )
+            break;
     }
-    return 0;
+    free(new_client_url);
+    return ret;
 }
 
 void new_client(lo_address client) {
@@ -177,10 +197,11 @@ int ardmix_handler(const char *path, const char *types, lo_arg ** argv, int argc
 
 
     if (!client_exists(data)) {
-        fprintf(stdout, "new client: %s\n", lo_address_get_url(lo_message_get_source(data)));
+        char* new_client_url = lo_address_get_url(lo_message_get_source(data));
+        fprintf(stdout, "new client: %s\n", new_client_url);
         fflush (stdout);
         new_client(data);
-        
+        free(new_client_url);
     }
 
     ret = lo_send_message(ardour_client, path, data);
@@ -198,6 +219,10 @@ int main(int argc, char *argv[]) {
     parse_arguments(argc, argv, &arg);
 
     ardmix_server = lo_server_thread_new_with_proto(arg.client_port, LO_TCP, ardmix_err_handler);
+    if( !ardmix_server ) {
+        fprintf(stderr, "ERROR: unable to create client port.\n");
+        return -1;
+    }
     lo_server_thread_add_method(ardmix_server, NULL, NULL, ardmix_handler, NULL);
     lo_server_thread_start(ardmix_server);
 
@@ -205,11 +230,11 @@ int main(int argc, char *argv[]) {
         ardmix_client[i] = NULL;
     }
     
-    ardour_server = lo_server_thread_new("3820", ardour_err_handler);
+    ardour_server = lo_server_thread_new(arg.server_receive_port, ardour_err_handler);
     lo_server_thread_add_method(ardour_server, NULL, NULL, ardour_handler, NULL);
     lo_server_thread_start(ardour_server);
 
-    ardour_client = lo_address_new("127.0.0.1", arg.server_port);
+    ardour_client = lo_address_new(arg.server_ip, arg.server_send_port);
 
     signal(SIGINT, ctrlc);
 
@@ -217,13 +242,14 @@ int main(int argc, char *argv[]) {
         sleep(1);
     };
 
+    fprintf(stdout, "\ngood bye :)\n");
+
     lo_server_thread_free(ardour_server);
     lo_server_thread_free(ardmix_server);
-
-    fprintf(stdout, "\ngood bye :)\n");
     
     free(arg.server_ip);
-    free(arg.server_port);
+    free(arg.server_send_port);
+    free(arg.server_receive_port);
     free(arg.client_port);
     
     return 0;
