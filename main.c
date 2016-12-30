@@ -21,7 +21,7 @@
 #include <signal.h>
 #include <lo/lo.h>
 
-#define VERSION "0.1.12"
+#define VERSION "0.1.14"
 
 #define MAX_CLIENTS 16
 
@@ -29,7 +29,6 @@ lo_address ardour_client = NULL;
 lo_server_thread ardour_server;
 
 lo_address ardmix_client[MAX_CLIENTS];
-int cClients;
 lo_server_thread ardmix_server;
 
 typedef struct {
@@ -52,7 +51,7 @@ usage (FILE *f, const char *me) {
 	fprintf (f, "Usage: oscbridge [OPTIONS]\n"
 		"\n"
 		"parameters:\n"
-		"  -c TCP_PORT      The port the OSC client connects to\n"
+		"  -c TCP_PORT      The port the OSC clients may connect to\n"
                 "  -u UDP_PORT      The udp port of the server\n"
                 "  -s HOST_IP       The ip of the udp server\n"
 		"  -h               This help\n"
@@ -141,7 +140,7 @@ void new_client(lo_address client) {
     for(i = 0; i < MAX_CLIENTS; i++) {
         if( ardmix_client[i] == NULL) {
            ardmix_client[i] = lo_message_get_source(client); 
-            break;
+           break;
         }
     }
 }
@@ -161,10 +160,12 @@ int ardour_handler(const char *path, const char *types, lo_arg ** argv, int argc
                 fprintf(stderr, "OSC client error %d: %s on %s\n", 
                         lo_address_errno(ardmix_client[i]), lo_address_errstr(ardmix_client[i]), lo_address_get_hostname(lo_message_get_source(data)));
             }
+            if( ret == -2 ) {
+                fprintf(stdout, "client disconnect.\n");
+                ardmix_client[i] = NULL;
+            }
         }
     }
-
-
     return 0;
 }
 
@@ -187,6 +188,7 @@ int ardmix_handler(const char *path, const char *types, lo_arg ** argv, int argc
     if (ret == -1) {
         fprintf(stderr, "OSC server error %d: %s on %s\n", lo_address_errno(ardour_client), lo_address_errstr(ardour_client), lo_address_get_url(ardour_client));
     }
+
     return 0;
 }
 
