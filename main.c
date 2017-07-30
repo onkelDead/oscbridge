@@ -53,7 +53,7 @@ usage (FILE *f, const char *me) {
 	fprintf (f, "Usage: oscbridge [OPTIONS]\n"
 		"\n"
 		"parameters:\n"
-		"  -c TCP_PORT              The port the OSC clients may connect to\n"
+		"  -t TCP_PORT              The port the OSC clients may connect to\n"
                 "  -u SERVER_SEND_PORT      The udp port of the server receiver\n"
                 "  -r SERVER_RECEIVE_PORT   The UDP port the server sends responses to.\n"
                 "  -s HOST_IP               The IP address of the udp server\n"
@@ -73,7 +73,7 @@ parse_arguments(int argc, char **argv, Arguments* arg) {
     arg->server_receive_port = strdup(default_server_receive_port);
     arg->client_port = strdup(default_client);
     for (;;) {
-        static const char *short_options = "t:u:s:hd:";
+        static const char *short_options = "t:u:s:hd:r:";
 
         c = getopt(argc, argv, short_options);
         if (c == -1)
@@ -111,11 +111,11 @@ void ctrlc(int sig) {
     done = 1;
 }
 
-void dump_message(const char* path, const char *types, lo_arg ** argv,
+void dump_message(const char* pair, const char* path, const char *types, lo_arg ** argv,
         int argc ) {
     int i;
     
-    fprintf(stdout, "ardour path: <%s> - ", path);
+    fprintf(stdout, "%s: <%s> - ", pair, path);
     for (i = 0; i < argc; i++) {
         fprintf(stdout, " '%c':", types[i]);
         lo_arg_pp((lo_type) types[i], argv[i]);
@@ -170,7 +170,7 @@ int ardour_handler(const char *path, const char *types, lo_arg ** argv, int argc
     int i;
     
     if( arg.debug_level & 2 )
-        dump_message(path, types, argv, argc);
+        dump_message("recv:", path, types, argv, argc);
 
     for( i = 0; i < MAX_CLIENTS; i++ ) {
         if( ardmix_client[i]) {
@@ -193,7 +193,7 @@ int ardmix_handler(const char *path, const char *types, lo_arg ** argv, int argc
     int ret;
 
     if( arg.debug_level & 1)
-        dump_message(path, types, argv, argc);
+        dump_message("send", path, types, argv, argc);
 
 
     if (!client_exists(data)) {

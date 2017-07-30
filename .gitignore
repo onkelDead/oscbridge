@@ -1,3 +1,6 @@
+.gitignore
+.deps
+*.o
 /stamp-h1
 /Makefile
 /nbproject/private/CodeAssistancePathMapper.properties
