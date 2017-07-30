@@ -1,6 +1,6 @@
 # oscbridge
 
-This service will transform UDP to TCP based OSC communication.
+This service will transform UDP to TCP based Open Sound Control communication.
 
 The initial intent is to work around communication problems occur between Ardmix and Ardour, which rely on
 slow Android network performance. In case of my tablet, I did miss some important UDP notifications from Ardour,
